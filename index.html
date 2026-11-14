@@ -56,8 +56,8 @@
     .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
 
     /* Griglia: testo su tutta la riga, poi data | priorità, categoria | pulsante */
-    form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
-    form > * { min-width: 0; width: 100%; }
+    #task-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+    #task-form > * { min-width: 0; width: 100%; }
     #task-input { grid-column: 1 / -1; }
 
     #task-input,
@@ -340,18 +340,49 @@
     }
     .cat-remove:hover { color: var(--danger); }
 
-    .new-cat {
-      width: 150px;
-      padding: 5px 10px;
+    .new-cat-form {
+      display: inline-flex;
+      align-items: center;
       border: 1px dashed var(--border);
       border-radius: 999px;
+      overflow: hidden;
+    }
+    .new-cat-form:focus-within { border-color: var(--accent); border-style: solid; }
+    .new-cat-btn {
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      width: 30px;
+      align-self: stretch;
+      cursor: pointer;
+    }
+    .new-cat-btn:hover { background: var(--accent-hover); }
+    .cat-chip.confirm { cursor: default; flex-wrap: wrap; border-color: var(--danger); }
+    .confirm-yes, .confirm-no {
+      border: none;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 0.78rem;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .confirm-yes { background: var(--danger); color: #fff; }
+    .confirm-no { background: rgba(138, 143, 163, 0.15); color: var(--text); }
+
+    .new-cat {
+      width: 140px;
+      padding: 5px 10px;
+      border: none;
       background: transparent;
       color: var(--text);
       font-size: 0.82rem;
       font-family: inherit;
       outline: none;
     }
-    .new-cat:focus { border-color: var(--accent); border-style: solid; }
+    
 
     .category-badge {
       display: inline-flex;
@@ -482,12 +513,11 @@
       return name;
     }
 
+    // Niente confirm(): viene bloccato nelle anteprime in iframe. Conferma in pagina.
+    let pendingDelete = null;
+
     function removeCategory(name) {
-      const n = tasks.filter(t => t.category === name).length;
-      const msg = n
-        ? `Eliminare la categoria "${name}"? I ${n} task collegati resteranno, ma senza categoria.`
-        : `Eliminare la categoria "${name}"?`;
-      if (!confirm(msg)) return;
+      pendingDelete = null;
       categories = categories.filter(c => c.name !== name);
       tasks.forEach(t => { if (t.category === name) t.category = null; });
       if (currentCategory === name) { currentCategory = null; categoryInput.value = ""; }
@@ -519,13 +549,33 @@
       categoriesBar.innerHTML = "";
 
       const all = document.createElement("button");
+      all.type = "button";
       all.className = "cat-chip" + (currentCategory === null ? " active" : "");
       all.textContent = "Tutte le categorie";
       all.addEventListener("click", () => setCategoryFilter(null));
       categoriesBar.appendChild(all);
 
       categories.forEach(c => {
+        if (pendingDelete === c.name) {
+          const n = tasks.filter(t => t.category === c.name).length;
+          const box = document.createElement("div");
+          box.className = "cat-chip confirm";
+          chipStyle(box, c.color);
+          const q = document.createElement("span");
+          q.textContent = `Eliminare "${c.name}"?` + (n ? ` (${n} task restano senza categoria)` : "");
+          const yes = document.createElement("button");
+          yes.type = "button"; yes.className = "confirm-yes"; yes.textContent = "Elimina";
+          yes.addEventListener("click", () => removeCategory(c.name));
+          const no = document.createElement("button");
+          no.type = "button"; no.className = "confirm-no"; no.textContent = "Annulla";
+          no.addEventListener("click", () => { pendingDelete = null; render(); });
+          box.append(q, yes, no);
+          categoriesBar.appendChild(box);
+          return;
+        }
+
         const chip = document.createElement("button");
+        chip.type = "button";
         chip.className = "cat-chip" + (currentCategory === c.name ? " active" : "");
         chipStyle(chip, c.color);
         chip.title = "Filtra per " + c.name;
@@ -544,27 +594,39 @@
         x.setAttribute("aria-label", "Elimina categoria " + c.name);
         x.title = "Elimina categoria";
         x.textContent = "×";
-        x.addEventListener("click", e => { e.stopPropagation(); removeCategory(c.name); });
+        x.addEventListener("click", e => { e.stopPropagation(); pendingDelete = c.name; render(); });
 
         chip.append(dot, label, count, x);
         chip.addEventListener("click", () => setCategoryFilter(currentCategory === c.name ? null : c.name));
         categoriesBar.appendChild(chip);
       });
 
+      const addForm = document.createElement("form");
+      addForm.className = "new-cat-form";
+      addForm.autocomplete = "off";
       const add = document.createElement("input");
       add.className = "new-cat";
-      add.placeholder = "+ Nuova categoria";
+      add.placeholder = "Nuova categoria";
       add.maxLength = 30;
+      add.enterKeyHint = "done";
       add.setAttribute("aria-label", "Nuova categoria");
-      add.addEventListener("keydown", e => {
-        if (e.key !== "Enter") return;
+      const addBtn = document.createElement("button");
+      addBtn.type = "submit";
+      addBtn.className = "new-cat-btn";
+      addBtn.textContent = "+";
+      addBtn.title = "Crea categoria";
+      addBtn.setAttribute("aria-label", "Crea categoria");
+      addForm.append(add, addBtn);
+      addForm.addEventListener("submit", e => {
         e.preventDefault();
         if (ensureCategory(add.value)) {
           render();
           categoriesBar.querySelector(".new-cat").focus();
+        } else {
+          add.focus();
         }
       });
-      categoriesBar.appendChild(add);
+      categoriesBar.appendChild(addForm);
     }
 
     // "YYYY-MM-DD" -> data locale a mezzanotte (evita slittamenti di fuso orario)
