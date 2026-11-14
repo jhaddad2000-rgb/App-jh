@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Todo List</title>
+  <style>
+    :root {
+      --bg: #f4f5fb;
+      --card: #ffffff;
+      --text: #1f2333;
+      --muted: #8a8fa3;
+      --border: #e6e8f0;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --danger: #ef4444;
+      --success: #10b981;
+      --shadow: 0 10px 30px rgba(31, 35, 51, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117;
+        --card: #1a1d27;
+        --text: #e8eaf2;
+        --muted: #8b90a5;
+        --border: #2a2e3b;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 60px 16px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 520px;
+      background: var(--card);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+
+    header { margin-bottom: 22px; }
+    h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+
+    form { display: flex; gap: 10px; margin-bottom: 18px; }
+
+    #task-input {
+      flex: 1;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #task-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+    }
+
+    .add-btn {
+      padding: 0 18px;
+      border: none;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .add-btn:hover { background: var(--accent-hover); }
+    .add-btn:active { transform: scale(0.97); }
+
+    .filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .filter-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn.active,
+    .filter-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    ul { list-style: none; }
+
+    .task {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--border);
+      animation: slideIn 0.25s ease;
+    }
+    .task:last-child { border-bottom: none; }
+    .task.removing { animation: slideOut 0.25s ease forwards; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideOut {
+      to { opacity: 0; transform: translateX(30px); }
+    }
+
+    .checkbox {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s;
+    }
+    .checkbox:hover { border-color: var(--success); }
+    .checkbox svg { width: 12px; height: 12px; opacity: 0; transition: opacity 0.2s; }
+    .task.completed .checkbox { background: var(--success); border-color: var(--success); }
+    .task.completed .checkbox svg { opacity: 1; }
+
+    .task-text {
+      flex: 1;
+      font-size: 1rem;
+      word-break: break-word;
+      transition: color 0.2s;
+    }
+    .task.completed .task-text {
+      color: var(--muted);
+      text-decoration: line-through;
+    }
+
+    .delete-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
+      opacity: 0;
+      transition: all 0.2s;
+      display: grid;
+      place-items: center;
+    }
+    .task:hover .delete-btn,
+    .delete-btn:focus-visible { opacity: 1; }
+    .delete-btn:hover { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+    @media (hover: none) { .delete-btn { opacity: 1; } }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 30px 0;
+      font-size: 0.95rem;
+    }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .clear-btn {
+      border: none;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .clear-btn:hover { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>Le mie attività</h1>
+      <p class="subtitle" id="date"></p>
+    </header>
+
+    <form id="task-form" autocomplete="off">
+      <input id="task-input" type="text" placeholder="Aggiungi una nuova attività..." maxlength="200" aria-label="Nuova attività" />
+      <button type="submit" class="add-btn">Aggiungi</button>
+    </form>
+
+    <div class="filters" role="group" aria-label="Filtra attività">
+      <button class="filter-btn active" data-filter="all">Tutte</button>
+      <button class="filter-btn" data-filter="active">Da fare</button>
+      <button class="filter-btn" data-filter="completed">Completate</button>
+    </div>
+
+    <ul id="task-list"></ul>
+
+    <footer>
+      <span id="counter"></span>
+      <button class="clear-btn" id="clear-completed">Elimina completate</button>
+    </footer>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "todo-app-tasks";
+    const form = document.getElementById("task-form");
+    const input = document.getElementById("task-input");
+    const list = document.getElementById("task-list");
+    const counter = document.getElementById("counter");
+    const clearBtn = document.getElementById("clear-completed");
+    const filterBtns = document.querySelectorAll(".filter-btn");
+
+    let tasks = loadTasks();
+    let currentFilter = "all";
+
+    document.getElementById("date").textContent = new Date().toLocaleDateString("it-IT", {
+      weekday: "long", day: "numeric", month: "long"
+    });
+
+    function loadTasks() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveTasks() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      } catch { /* storage non disponibile */ }
+    }
+
+    function addTask(text) {
+      tasks.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), text, completed: false });
+      saveTasks();
+      render();
+    }
+
+    function toggleTask(id) {
+      const task = tasks.find(t => t.id === id);
+      if (task) task.completed = !task.completed;
+      saveTasks();
+      render();
+    }
+
+    function deleteTask(id, element) {
+      element.classList.add("removing");
+      element.addEventListener("animationend", () => {
+        tasks = tasks.filter(t => t.id !== id);
+        saveTasks();
+        render();
+      }, { once: true });
+    }
+
+    function render() {
+      list.innerHTML = "";
+
+      const visible = tasks.filter(t =>
+        currentFilter === "all" ? true :
+        currentFilter === "active" ? !t.completed : t.completed
+      );
+
+      if (visible.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "empty";
+        empty.textContent = tasks.length === 0
+          ? "Nessuna attività. Aggiungine una! ✨"
+          : "Nessuna attività in questa vista.";
+        list.appendChild(empty);
+      }
+
+      visible.forEach(task => {
+        const li = document.createElement("li");
+        li.className = "task" + (task.completed ? " completed" : "");
+
+        const check = document.createElement("button");
+        check.className = "checkbox";
+        check.setAttribute("aria-label", task.completed ? "Segna come da fare" : "Segna come completata");
+        check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        check.addEventListener("click", () => toggleTask(task.id));
+
+        const span = document.createElement("span");
+        span.className = "task-text";
+        span.textContent = task.text;
+
+        const del = document.createElement("button");
+        del.className = "delete-btn";
+        del.setAttribute("aria-label", "Elimina attività");
+        del.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+        del.addEventListener("click", () => deleteTask(task.id, li));
+
+        li.append(check, span, del);
+        list.appendChild(li);
+      });
+
+      const remaining = tasks.filter(t => !t.completed).length;
+      counter.textContent = `${remaining} ${remaining === 1 ? "attività rimanente" : "attività rimanenti"}`;
+      clearBtn.style.visibility = tasks.some(t => t.completed) ? "visible" : "hidden";
+    }
+
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      addTask(text);
+      input.value = "";
+      input.focus();
+    });
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        filterBtns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentFilter = btn.dataset.filter;
+        render();
+      });
+    });
+
+    clearBtn.addEventListener("click", () => {
+      tasks = tasks.filter(t => !t.completed);
+      saveTasks();
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
