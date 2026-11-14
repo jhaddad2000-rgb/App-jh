@@ -77,6 +77,24 @@
 
     #due-input { flex: 1 1 auto; }
 
+    #priority-input {
+      flex: 0 1 auto;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #priority-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+    }
+
     #task-input {
       flex: 1 1 100%;
       padding: 12px 14px;
@@ -174,8 +192,29 @@
       gap: 4px;
     }
 
+    .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* Barra colorata a sinistra in base alla priorità */
+    .task { border-left: 3px solid transparent; }
+    .task.p-high   { border-left-color: #ef4444; }
+    .task.p-medium { border-left-color: #f59e0b; }
+    .task.p-low    { border-left-color: #10b981; }
+    .task.completed { border-left-color: var(--border); }
+
+    .priority {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .priority.high   { color: #dc2626; background: rgba(239, 68, 68, 0.12); }
+    .priority.medium { color: #d97706; background: rgba(245, 158, 11, 0.14); }
+    .priority.low    { color: #059669; background: rgba(16, 185, 129, 0.14); }
+    .task.completed .priority { color: var(--muted); background: rgba(138, 143, 163, 0.12); }
+
     .due {
-      align-self: flex-start;
       display: inline-flex;
       align-items: center;
       gap: 4px;
@@ -254,6 +293,11 @@
     <form id="task-form" autocomplete="off">
       <input id="task-input" type="text" placeholder="Aggiungi una nuova attività..." maxlength="200" aria-label="Nuova attività" />
       <input id="due-input" type="date" aria-label="Scadenza (facoltativa)" title="Scadenza (facoltativa)" />
+      <select id="priority-input" aria-label="Priorità" title="Priorità">
+        <option value="high">🔴 Alta</option>
+        <option value="medium" selected>🟠 Media</option>
+        <option value="low">🟢 Bassa</option>
+      </select>
       <button type="submit" class="add-btn">Aggiungi</button>
     </form>
 
@@ -276,6 +320,7 @@
     const form = document.getElementById("task-form");
     const input = document.getElementById("task-input");
     const dueInput = document.getElementById("due-input");
+    const priorityInput = document.getElementById("priority-input");
     const list = document.getElementById("task-list");
     const counter = document.getElementById("counter");
     const clearBtn = document.getElementById("clear-completed");
@@ -321,8 +366,10 @@
       };
     }
 
-    function addTask(text, due) {
-      tasks.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), text, due: due || null, completed: false });
+    const PRIORITY_LABELS = { high: "Alta", medium: "Media", low: "Bassa" };
+
+    function addTask(text, due, priority) {
+      tasks.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), text, due: due || null, priority, completed: false });
       saveTasks();
       render();
     }
@@ -378,13 +425,26 @@
         body.className = "task-body";
         body.appendChild(span);
 
+        const meta = document.createElement("div");
+        meta.className = "meta";
+
+        if (PRIORITY_LABELS[task.priority]) {
+          li.classList.add("p-" + task.priority);
+          const pr = document.createElement("span");
+          pr.className = "priority " + task.priority;
+          pr.textContent = "⚑ " + PRIORITY_LABELS[task.priority];
+          meta.appendChild(pr);
+        }
+
         if (task.due) {
           const info = dueInfo(task.due);
           const badge = document.createElement("span");
           badge.className = "due " + info.cls;
           badge.textContent = "📅 " + info.label;
-          body.appendChild(badge);
+          meta.appendChild(badge);
         }
+
+        if (meta.children.length) body.appendChild(meta);
 
         const del = document.createElement("button");
         del.className = "delete-btn";
@@ -405,9 +465,10 @@
       e.preventDefault();
       const text = input.value.trim();
       if (!text) return;
-      addTask(text, dueInput.value);
+      addTask(text, dueInput.value, priorityInput.value);
       input.value = "";
       dueInput.value = "";
+      priorityInput.value = "medium";
       input.focus();
     });
 
