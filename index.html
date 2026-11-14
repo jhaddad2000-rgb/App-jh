@@ -55,7 +55,10 @@
     h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
     .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
 
-    form { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+    /* Griglia: testo su tutta la riga, poi data | priorità, categoria | pulsante */
+    form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+    form > * { min-width: 0; width: 100%; }
+    #task-input { grid-column: 1 / -1; }
 
     #task-input,
     #due-input {
@@ -281,6 +284,91 @@
       font-size: 0.85rem;
     }
     .clear-btn:hover { color: var(--danger); }
+
+    /* ---- Categorie ---- */
+    #category-input {
+      flex: 1 1 150px;
+      min-width: 0;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #category-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+    }
+
+    .categories {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .cat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text);
+      font-size: 0.82rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .cat-chip:hover { border-color: var(--muted); }
+    .cat-chip.active { border-color: var(--chip-color, var(--accent)); background: var(--chip-bg, rgba(99, 102, 241, 0.1)); }
+    .cat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color); flex-shrink: 0; }
+    .cat-count { color: var(--muted); font-size: 0.75rem; }
+    .cat-remove {
+      border: none;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+      padding: 0 0 0 2px;
+    }
+    .cat-remove:hover { color: var(--danger); }
+
+    .new-cat {
+      width: 150px;
+      padding: 5px 10px;
+      border: 1px dashed var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text);
+      font-size: 0.82rem;
+      font-family: inherit;
+      outline: none;
+    }
+    .new-cat:focus { border-color: var(--accent); border-style: solid; }
+
+    .category-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      color: var(--chip-color);
+      background: var(--chip-bg);
+    }
+    .task.completed .category-badge { color: var(--muted); background: rgba(138, 143, 163, 0.12); }
+    .task.completed .category-badge .cat-dot { background: var(--muted); }
   </style>
 </head>
 <body>
@@ -298,8 +386,13 @@
         <option value="medium" selected>🟠 Media</option>
         <option value="low">🟢 Bassa</option>
       </select>
+      <input id="category-input" type="text" list="category-list" maxlength="30"
+             placeholder="Categoria" aria-label="Categoria (facoltativa)" />
+      <datalist id="category-list"></datalist>
       <button type="submit" class="add-btn">Aggiungi</button>
     </form>
+
+    <div class="categories" id="categories" aria-label="Categorie"></div>
 
     <div class="filters" role="group" aria-label="Filtra attività">
       <button class="filter-btn active" data-filter="all">Tutte</button>
@@ -321,6 +414,11 @@
     const input = document.getElementById("task-input");
     const dueInput = document.getElementById("due-input");
     const priorityInput = document.getElementById("priority-input");
+    const categoryInput = document.getElementById("category-input");
+    const categoryList = document.getElementById("category-list");
+    const categoriesBar = document.getElementById("categories");
+    const CATEGORIES_KEY = "todo-app-categories";
+    const CATEGORY_COLORS = ["#6366f1", "#0ea5e9", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#65a30d", "#64748b"];
     const list = document.getElementById("task-list");
     const counter = document.getElementById("counter");
     const clearBtn = document.getElementById("clear-completed");
@@ -328,6 +426,8 @@
 
     let tasks = loadTasks();
     let currentFilter = "all";
+    let currentCategory = null; // null = tutte le categorie
+    let categories = loadCategories();
 
     document.getElementById("date").textContent = new Date().toLocaleDateString("it-IT", {
       weekday: "long", day: "numeric", month: "long"
@@ -345,6 +445,126 @@
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
       } catch { /* storage non disponibile */ }
+    }
+
+    // ---- Categorie: [{ name, color }] salvate a parte ----
+    function loadCategories() {
+      let saved = [];
+      try { saved = JSON.parse(localStorage.getItem(CATEGORIES_KEY)) || []; } catch { saved = []; }
+      // recupera eventuali categorie usate dai task ma non in elenco
+      tasks.forEach(t => {
+        if (t.category && !saved.some(c => c.name === t.category)) {
+          saved.push({ name: t.category, color: CATEGORY_COLORS[saved.length % CATEGORY_COLORS.length] });
+        }
+      });
+      return saved;
+    }
+
+    function saveCategories() {
+      try { localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories)); } catch { /* storage non disponibile */ }
+    }
+
+    function findCategory(name) {
+      const key = name.trim().toLowerCase();
+      return categories.find(c => c.name.toLowerCase() === key);
+    }
+
+    // Restituisce il nome della categoria, creandola se non esiste
+    function ensureCategory(name) {
+      name = name.trim().replace(/\s+/g, " ");
+      if (!name) return null;
+      const existing = findCategory(name);
+      if (existing) return existing.name;
+      const used = categories.map(c => c.color);
+      const color = CATEGORY_COLORS.find(c => !used.includes(c)) || CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
+      categories.push({ name, color });
+      saveCategories();
+      return name;
+    }
+
+    function removeCategory(name) {
+      const n = tasks.filter(t => t.category === name).length;
+      const msg = n
+        ? `Eliminare la categoria "${name}"? I ${n} task collegati resteranno, ma senza categoria.`
+        : `Eliminare la categoria "${name}"?`;
+      if (!confirm(msg)) return;
+      categories = categories.filter(c => c.name !== name);
+      tasks.forEach(t => { if (t.category === name) t.category = null; });
+      if (currentCategory === name) { currentCategory = null; categoryInput.value = ""; }
+      saveCategories();
+      saveTasks();
+      render();
+    }
+
+    // Filtra per categoria e la propone come predefinita per i nuovi task
+    function setCategoryFilter(name) {
+      currentCategory = name;
+      categoryInput.value = name || "";
+      render();
+    }
+
+    function chipStyle(el, color) {
+      el.style.setProperty("--chip-color", color);
+      el.style.setProperty("--chip-bg", color + "1f");
+    }
+
+    function renderCategories() {
+      categoryList.innerHTML = "";
+      categories.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.name;
+        categoryList.appendChild(opt);
+      });
+
+      categoriesBar.innerHTML = "";
+
+      const all = document.createElement("button");
+      all.className = "cat-chip" + (currentCategory === null ? " active" : "");
+      all.textContent = "Tutte le categorie";
+      all.addEventListener("click", () => setCategoryFilter(null));
+      categoriesBar.appendChild(all);
+
+      categories.forEach(c => {
+        const chip = document.createElement("button");
+        chip.className = "cat-chip" + (currentCategory === c.name ? " active" : "");
+        chipStyle(chip, c.color);
+        chip.title = "Filtra per " + c.name;
+
+        const dot = document.createElement("span");
+        dot.className = "cat-dot";
+        const label = document.createElement("span");
+        label.textContent = c.name;
+        const count = document.createElement("span");
+        count.className = "cat-count";
+        count.textContent = tasks.filter(t => t.category === c.name && !t.completed).length || "";
+
+        const x = document.createElement("span");
+        x.className = "cat-remove";
+        x.setAttribute("role", "button");
+        x.setAttribute("aria-label", "Elimina categoria " + c.name);
+        x.title = "Elimina categoria";
+        x.textContent = "×";
+        x.addEventListener("click", e => { e.stopPropagation(); removeCategory(c.name); });
+
+        chip.append(dot, label, count, x);
+        chip.addEventListener("click", () => setCategoryFilter(currentCategory === c.name ? null : c.name));
+        categoriesBar.appendChild(chip);
+      });
+
+      const add = document.createElement("input");
+      add.className = "new-cat";
+      add.placeholder = "+ Nuova categoria";
+      add.maxLength = 30;
+      add.setAttribute("aria-label", "Nuova categoria");
+      add.addEventListener("keydown", e => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        if (ensureCategory(add.value)) {
+          render();
+          categoriesBar.querySelector(".new-cat").focus();
+        }
+      });
+      categoriesBar.appendChild(add);
     }
 
     // "YYYY-MM-DD" -> data locale a mezzanotte (evita slittamenti di fuso orario)
@@ -368,8 +588,8 @@
 
     const PRIORITY_LABELS = { high: "Alta", medium: "Media", low: "Bassa" };
 
-    function addTask(text, due, priority) {
-      tasks.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), text, due: due || null, priority, completed: false });
+    function addTask(text, due, priority, category) {
+      tasks.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), text, due: due || null, priority, category, completed: false });
       saveTasks();
       render();
     }
@@ -392,10 +612,12 @@
 
     function render() {
       list.innerHTML = "";
+      renderCategories();
 
       const visible = tasks.filter(t =>
-        currentFilter === "all" ? true :
-        currentFilter === "active" ? !t.completed : t.completed
+        (currentCategory === null || t.category === currentCategory) &&
+        (currentFilter === "all" ? true :
+         currentFilter === "active" ? !t.completed : t.completed)
       );
 
       if (visible.length === 0) {
@@ -427,6 +649,19 @@
 
         const meta = document.createElement("div");
         meta.className = "meta";
+
+        const cat = task.category && categories.find(c => c.name === task.category);
+        if (cat) {
+          const cb = document.createElement("button");
+          cb.className = "category-badge";
+          chipStyle(cb, cat.color);
+          cb.title = "Mostra solo " + cat.name;
+          const dot = document.createElement("span");
+          dot.className = "cat-dot";
+          cb.append(dot, document.createTextNode(cat.name));
+          cb.addEventListener("click", () => setCategoryFilter(cat.name));
+          meta.appendChild(cb);
+        }
 
         if (PRIORITY_LABELS[task.priority]) {
           li.classList.add("p-" + task.priority);
@@ -465,9 +700,10 @@
       e.preventDefault();
       const text = input.value.trim();
       if (!text) return;
-      addTask(text, dueInput.value, priorityInput.value);
+      addTask(text, dueInput.value, priorityInput.value, ensureCategory(categoryInput.value));
       input.value = "";
       dueInput.value = "";
+      categoryInput.value = currentCategory || "";
       priorityInput.value = "medium";
       input.focus();
     });
