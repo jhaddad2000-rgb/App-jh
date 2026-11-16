@@ -569,9 +569,15 @@
       }
     }
 
+    // I dati del cloud arrivano congelati (sola lettura): vanno sempre copiati,
+    // altrimenti non si possono più aggiungere o modificare task e categorie.
+    function cloneList(v) {
+      return Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : [];
+    }
+
     function applyCloudState(data) {
-      tasks = Array.isArray(data.tasks) ? data.tasks : [];
-      categories = Array.isArray(data.categories) ? data.categories : [];
+      tasks = cloneList(data.tasks);
+      categories = cloneList(data.categories);
       if (currentCategory && !categories.some(c => c.name === currentCategory)) {
         currentCategory = null;
         categoryInput.value = "";
@@ -603,8 +609,8 @@
         // unisci invece di sovrascrivere i dati degli altri dispositivi.
         if (!cloudReady && !snap.metadata.fromCache && snap.exists && dirty) {
           const data = snap.data();
-          const cloudTasks = Array.isArray(data.tasks) ? data.tasks : [];
-          const cloudCats = Array.isArray(data.categories) ? data.categories : [];
+          const cloudTasks = cloneList(data.tasks);
+          const cloudCats = cloneList(data.categories);
           const ids = new Set(cloudTasks.map(t => t.id));
           tasks = tasks.filter(t => !ids.has(t.id)).concat(cloudTasks);
           categories = cloudCats.concat(categories.filter(c => !cloudCats.some(k => k.name === c.name)));
