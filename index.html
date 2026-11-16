@@ -62,6 +62,9 @@
     header { margin-bottom: 22px; }
     h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
     .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+    .sync { white-space: nowrap; }
+    .sync.ok { color: var(--success); }
+    .sync.warn { color: #d97706; }
 
     /* Griglia: testo su tutta la riga, poi data | priorità, categoria | pulsante */
     #task-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
@@ -414,7 +417,7 @@
   <main class="app">
     <header>
       <h1>Le mie attività</h1>
-      <p class="subtitle" id="date"></p>
+      <p class="subtitle"><span id="date"></span> · <span id="sync-status" class="sync">💾 Salvato su questo dispositivo</span></p>
     </header>
 
     <form id="task-form" autocomplete="off">
@@ -484,6 +487,7 @@
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
       } catch { /* storage non disponibile */ }
+      scheduleCloudSave();
     }
 
     // ---- Categorie: [{ name, color }] salvate a parte ----
@@ -501,6 +505,138 @@
 
     function saveCategories() {
       try { localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories)); } catch { /* storage non disponibile */ }
+      scheduleCloudSave();
+    }
+
+    // ================= Sincronizzazione cloud =================
+    // Su claude.ai i dati di ogni utente stanno in un documento privato
+    // (data/users/<id>/state), così restano aggiornati su ogni dispositivo.
+    // Se il cloud non è disponibile (file aperto in locale, utente non
+    // collegato, permessi di sola lettura) si usa solo il browser.
+    const syncEl = document.getElementById("sync-status");
+    let cloudRef = null;      // riferimento al documento, se il cloud è attivo
+    let cloudReady = false;   // primo dato dal server ricevuto
+    let saveTimer = null;
+    let saving = false;
+    let dirty = false;        // modifiche locali non ancora inviate
+
+    function setSync(text, cls) {
+      syncEl.textContent = text;
+      syncEl.className = "sync" + (cls ? " " + cls : "");
+    }
+
+    function writeLocalCache() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+      } catch { /* storage non disponibile */ }
+    }
+
+    function scheduleCloudSave() {
+      if (!cloudRef) return;
+      dirty = true;
+      setSync("⏳ Salvataggio…", "");
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flushCloudSave, 400);
+    }
+
+    // Una sola scrittura alla volta; se arrivano altre modifiche nel frattempo,
+    // si scrive di nuovo appena finita la precedente.
+    async function flushCloudSave() {
+      if (!cloudRef || saving || !dirty) return;
+      if (!cloudReady) { saveTimer = setTimeout(flushCloudSave, 500); return; }
+      saving = true;
+      dirty = false;
+      try {
+        await cloudRef.set({ version: 1, tasks, categories, updatedAt: new Date().toISOString() });
+        if (!dirty) setSync("☁️ Sincronizzato", "ok");
+      } catch (e) {
+        const code = e && e.code;
+        if (code === "invalid_argument" || code === "not_granted" || code === "revoked" ||
+            code === "capability_disabled" || code === "capability_removed") {
+          cloudRef = null;
+          setSync("💾 Salvato solo su questo dispositivo", "warn");
+        } else if (code === "quota_exceeded") {
+          setSync("⚠️ Spazio esaurito: elimina qualche task completato", "warn");
+        } else {
+          dirty = true;
+          setSync("⚠️ Non sincronizzato, riprovo…", "warn");
+          saveTimer = setTimeout(flushCloudSave, 3000 + Math.random() * 2000);
+        }
+      } finally {
+        saving = false;
+        if (dirty && cloudRef) { clearTimeout(saveTimer); saveTimer = setTimeout(flushCloudSave, 400); }
+      }
+    }
+
+    function applyCloudState(data) {
+      tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      categories = Array.isArray(data.categories) ? data.categories : [];
+      if (currentCategory && !categories.some(c => c.name === currentCategory)) {
+        currentCategory = null;
+        categoryInput.value = "";
+      }
+      writeLocalCache();
+      render();
+    }
+
+    async function initCloud() {
+      if (!window.claude || typeof window.claude.use !== "function") return;
+      let db, user;
+      try {
+        [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+      } catch { return; }
+      if (!db || !user) return;
+      const uid = await user.id();
+      if (!uid) return;
+
+      cloudRef = db.doc("data/users/" + uid + "/state");
+      setSync("⏳ Caricamento…", "");
+      const timeout = setTimeout(() => {
+        setSync("⚠️ Cloud non raggiungibile: dati locali", "warn");
+      }, 10000);
+
+      cloudRef.onSnapshot(snap => {
+        if (!snap.metadata.fromCache) clearTimeout(timeout);
+
+        // Primo dato vero dal server ma con modifiche fatte prima del caricamento:
+        // unisci invece di sovrascrivere i dati degli altri dispositivi.
+        if (!cloudReady && !snap.metadata.fromCache && snap.exists && dirty) {
+          const data = snap.data();
+          const cloudTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const cloudCats = Array.isArray(data.categories) ? data.categories : [];
+          const ids = new Set(cloudTasks.map(t => t.id));
+          tasks = tasks.filter(t => !ids.has(t.id)).concat(cloudTasks);
+          categories = cloudCats.concat(categories.filter(c => !cloudCats.some(k => k.name === c.name)));
+          cloudReady = true;
+          writeLocalCache();
+          render();
+          flushCloudSave();
+          return;
+        }
+
+        // Ignora l'eco delle nostre scritture e i dati arrivati mentre
+        // abbiamo modifiche non ancora salvate: vincono quelle.
+        if (snap.metadata.hasPendingWrites || dirty || saving) return;
+
+        if (snap.exists) {
+          applyCloudState(snap.data());
+          if (!snap.metadata.fromCache) { cloudReady = true; setSync("☁️ Sincronizzato", "ok"); }
+        } else if (!snap.metadata.fromCache && !cloudReady) {
+          // Primo accesso: porta nel cloud i dati già salvati nel browser
+          cloudReady = true;
+          if (tasks.length || categories.length) {
+            dirty = true;
+            flushCloudSave();
+          } else {
+            setSync("☁️ Sincronizzato", "ok");
+          }
+        }
+      }, () => {
+        clearTimeout(timeout);
+        cloudRef = null;
+        setSync("💾 Salvato solo su questo dispositivo", "warn");
+      });
     }
 
     function findCategory(name) {
@@ -547,6 +683,9 @@
     }
 
     function renderCategories() {
+      const prevNew = categoriesBar.querySelector(".new-cat");
+      const draft = prevNew ? prevNew.value : "";
+      const draftFocused = prevNew && document.activeElement === prevNew;
       categoryList.innerHTML = "";
       categories.forEach(c => {
         const opt = document.createElement("option");
@@ -628,6 +767,7 @@
       addForm.addEventListener("submit", e => {
         e.preventDefault();
         if (ensureCategory(add.value)) {
+          add.value = "";
           render();
           categoriesBar.querySelector(".new-cat").focus();
         } else {
@@ -635,6 +775,8 @@
         }
       });
       categoriesBar.appendChild(addForm);
+      add.value = draft;
+      if (draftFocused) add.focus();
     }
 
     // "YYYY-MM-DD" -> data locale a mezzanotte (evita slittamenti di fuso orario)
@@ -794,6 +936,7 @@
     });
 
     render();
+    initCloud();
   </script>
 </body>
 </html>
