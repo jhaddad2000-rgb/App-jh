@@ -322,6 +322,19 @@
       gap: 6px;
       margin-bottom: 14px;
     }
+    /* Su telefono le categorie scorrono in orizzontale invece di occupare molte righe */
+    @media (max-width: 560px) {
+      .categories {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        margin: 0 -28px 14px;
+        padding: 2px 28px 6px;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .categories::-webkit-scrollbar { display: none; }
+      .categories > * { flex-shrink: 0; white-space: nowrap; }
+    }
     .cat-chip {
       display: inline-flex;
       align-items: center;
@@ -460,7 +473,23 @@
     const categoryList = document.getElementById("category-list");
     const categoriesBar = document.getElementById("categories");
     const CATEGORIES_KEY = "todo-app-categories";
-    const CATEGORY_COLORS = ["#6366f1", "#0ea5e9", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#65a30d", "#64748b"];
+    const CATEGORY_COLORS = ["#6366f1", "#0ea5e9", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#65a30d", "#64748b", "#ca8a04", "#e11d48", "#d946ef", "#78716c"];
+    // Categorie iniziali: aggiunte una sola volta a ogni lista (se le elimini non tornano)
+    const DEFAULTS_KEY = "todo-app-defaults-v1";
+    const DEFAULT_CATEGORIES = [
+      { name: "In corso",           color: "#0ea5e9" },
+      { name: "Direzione",          color: "#6366f1" },
+      { name: "Produzione",         color: "#f97316" },
+      { name: "Manutenzione",       color: "#78716c" },
+      { name: "Logistica/Acquisti", color: "#14b8a6" },
+      { name: "Vendite",            color: "#65a30d" },
+      { name: "Amministrazione",    color: "#8b5cf6" },
+      { name: "HR",                 color: "#ec4899" },
+      { name: "Sicurezza/Qualità",  color: "#e11d48" },
+      { name: "Marketing",          color: "#d946ef" },
+      { name: "Da archiviare",      color: "#64748b" },
+      { name: "Box idea",           color: "#ca8a04" },
+    ];
     const list = document.getElementById("task-list");
     const counter = document.getElementById("counter");
     const clearBtn = document.getElementById("clear-completed");
@@ -470,6 +499,22 @@
     let currentFilter = "all";
     let currentCategory = null; // null = tutte le categorie
     let categories = loadCategories();
+    let defaultsSeeded = false;
+    try { defaultsSeeded = localStorage.getItem(DEFAULTS_KEY) === "1"; } catch { /* storage non disponibile */ }
+
+    // Aggiunge le categorie iniziali mancanti (una volta sola). true se ha cambiato qualcosa.
+    function seedDefaultCategories() {
+      if (defaultsSeeded) return false;
+      defaultsSeeded = true;
+      try { localStorage.setItem(DEFAULTS_KEY, "1"); } catch { /* storage non disponibile */ }
+      DEFAULT_CATEGORIES.forEach(d => {
+        if (!categories.some(c => c.name.toLowerCase() === d.name.toLowerCase())) categories.push({ ...d });
+      });
+      return true;
+    }
+    if (seedDefaultCategories()) {
+      try { localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories)); } catch { /* storage non disponibile */ }
+    }
 
     document.getElementById("date").textContent = new Date().toLocaleDateString("it-IT", {
       weekday: "long", day: "numeric", month: "long"
@@ -548,7 +593,7 @@
       saving = true;
       dirty = false;
       try {
-        await cloudRef.set({ version: 1, tasks, categories, updatedAt: new Date().toISOString() });
+        await cloudRef.set({ version: 1, tasks, categories, defaultsSeeded: true, updatedAt: new Date().toISOString() });
         if (!dirty) setSync("☁️ Sincronizzato", "ok");
       } catch (e) {
         const code = e && e.code;
@@ -578,6 +623,11 @@
     function applyCloudState(data) {
       tasks = cloneList(data.tasks);
       categories = cloneList(data.categories);
+      // Lista nel cloud creata prima delle categorie iniziali: aggiungile ora
+      if (!data.defaultsSeeded) {
+        defaultsSeeded = false;
+        if (seedDefaultCategories()) scheduleCloudSave();
+      }
       if (currentCategory && !categories.some(c => c.name === currentCategory)) {
         currentCategory = null;
         categoryInput.value = "";
